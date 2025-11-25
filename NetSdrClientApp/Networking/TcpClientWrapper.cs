@@ -57,9 +57,9 @@ namespace NetSdrClientApp.Networking
             if (Connected)
             {
                 _cts?.Cancel();
-		_cts?.Dispose();
-		_stream?.Dispose();
-		_tcpClient?.Dispose();
+		        _cts?.Dispose();
+		        _stream?.Dispose();
+		        _tcpClient?.Dispose();
                 _stream?.Close();
                 _tcpClient?.Close();
 
@@ -138,10 +138,10 @@ namespace NetSdrClientApp.Networking
                 throw new InvalidOperationException("Not connected to a server.");
             }
         }
-	public void Dispose()
-	{
-		Disconnect();
-	}
+	    public void Dispose()
+	    {
+		    Disconnect();
+	    }
     }
 
 }
