@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 
 namespace NetSdrClientApp.Networking
 {
-    public class UdpClientWrapper : IUdpClient
+    public class UdpClientWrapper : IUdpClient, IDisposable 
     {
         private readonly IPEndPoint _localEndPoint;
         private CancellationTokenSource? _cts;
@@ -52,7 +52,11 @@ namespace NetSdrClientApp.Networking
             try
             {
                 _cts?.Cancel();
+                _cts?.Dispose(); 
+                _cts = null; 
                 _udpClient?.Close();
+                _udpClient?.Dispose(); 
+                _udpClient = null;
                 Console.WriteLine("Stopped listening for UDP messages.");
             }
             catch (Exception ex)
@@ -66,7 +70,11 @@ namespace NetSdrClientApp.Networking
             try
             {
                 _cts?.Cancel();
+                _cts?.Dispose();
+                _cts = null; 
                 _udpClient?.Close();
+                _udpClient?.Dispose();
+                _udpClient = null;
                 Console.WriteLine("Stopped listening for UDP messages.");
             }
             catch (Exception ex)
@@ -84,7 +92,15 @@ namespace NetSdrClientApp.Networking
 
             return false;
         }
+        public void Dispose()
+        {
+            _cts?.Cancel();
+            _cts?.Dispose();
+            _cts = null;
 
+            _udpClient?.Dispose();
+            _udpClient = null;
+        }
         public override int GetHashCode()
         {
             var payload = $"{nameof(UdpClientWrapper)}|{_localEndPoint.Address}|{_localEndPoint.Port}";
