@@ -1,14 +1,11 @@
 ﻿
-namespace NetSdrClientApp.Networking
+public interface IUdpClient
 {
+    event EventHandler<byte[]>? MessageReceived;
 
-	public interface IUdpClient
-	{
-	    event EventHandler<byte[]>? MessageReceived;
+    Task StartListeningAsync();
 
-	    Task StartListeningAsync();
-
-	    void StopListening();
-	    void Exit();
-	}
+    void StopListening();
+    void Exit();
 }
+
