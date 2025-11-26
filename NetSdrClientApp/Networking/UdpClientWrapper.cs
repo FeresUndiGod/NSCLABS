@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 
 namespace NetSdrClientApp.Networking
 {
-    public class UdpClientWrapper : IUdpClient
+    public class UdpClientWrapper : IUdpClient, IDisposable 
     {
         private readonly IPEndPoint _localEndPoint;
         private CancellationTokenSource? _cts;
@@ -27,7 +27,7 @@ namespace NetSdrClientApp.Networking
             Console.WriteLine("Start listening for UDP messages...");
 
             try
-            {
+            {   
                 _udpClient = new UdpClient(_localEndPoint);
                 while (!_cts.Token.IsCancellationRequested)
                 {
@@ -44,7 +44,7 @@ namespace NetSdrClientApp.Networking
             catch (Exception ex)
             {
                 Console.WriteLine($"Error receiving message: {ex.Message}");
-            }
+            }   
         }
 
         public void StopListening()
@@ -52,7 +52,11 @@ namespace NetSdrClientApp.Networking
             try
             {
                 _cts?.Cancel();
+                _cts?.Dispose(); 
+                _cts = null; 
                 _udpClient?.Close();
+                _udpClient?.Dispose(); 
+                _udpClient = null;
                 Console.WriteLine("Stopped listening for UDP messages.");
             }
             catch (Exception ex)
@@ -66,7 +70,11 @@ namespace NetSdrClientApp.Networking
             try
             {
                 _cts?.Cancel();
+                _cts?.Dispose();
+                _cts = null; 
                 _udpClient?.Close();
+                _udpClient?.Dispose();
+                _udpClient = null;
                 Console.WriteLine("Stopped listening for UDP messages.");
             }
             catch (Exception ex)
@@ -74,7 +82,25 @@ namespace NetSdrClientApp.Networking
                 Console.WriteLine($"Error while stopping: {ex.Message}");
             }
         }
+        public override bool Equals(object? obj)
+        {
+            if (obj is UdpClientWrapper other)
+            {
+                return _localEndPoint.Address.Equals(other._localEndPoint.Address)
+                    && _localEndPoint.Port == other._localEndPoint.Port;
+            }
 
+            return false;
+        }
+        public void Dispose()
+        {
+            _cts?.Cancel();
+            _cts?.Dispose();
+            _cts = null;
+
+            _udpClient?.Dispose();
+            _udpClient = null;
+        }
         public override int GetHashCode()
         {
             var payload = $"{nameof(UdpClientWrapper)}|{_localEndPoint.Address}|{_localEndPoint.Port}";
@@ -84,5 +110,5 @@ namespace NetSdrClientApp.Networking
 
             return BitConverter.ToInt32(hash, 0);
         }
-    }    
-} 
+    }
+}
