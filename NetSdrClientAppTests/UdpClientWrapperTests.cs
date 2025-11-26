@@ -10,52 +10,73 @@ namespace NetSdrClientAppTests.Networking
 {
     public class UdpClientWrapperTests
     {
+        // ТЕСТ 1: Робота UDP (Start -> Receive -> Stop)
+        // Покриває: StartListeningAsync, ReceiveAsync, Invoke, StopListening
         [Fact]
-        public void Constructor_ShouldCreateInstance()
+        public async Task Udp_Lifecycle_ShouldWork()
         {
-            var wrapper = new UdpClientWrapper(0);
-            Assert.NotNull(wrapper);
-        }
-
-        [Fact]
-        public async Task Listening_ShouldReceiveData_AndStop()
-        {
-            int port = 12000;
+            int port = 15000; // Вибираємо вільний порт
             var wrapper = new UdpClientWrapper(port);
-            string receivedMsg = null;
             
-            wrapper.MessageReceived += (s, data) => receivedMsg = Encoding.UTF8.GetString(data);
+            string receivedText = null;
+            wrapper.MessageReceived += (s, data) => receivedText = Encoding.UTF8.GetString(data);
 
-            // Start
-            var task = wrapper.StartListeningAsync();
-            await Task.Delay(2000);
+            // 1. START
+            var listenTask = wrapper.StartListeningAsync();
+            await Task.Delay(200); // Даємо час запуститися
 
-            // Send Real Packet
+            // 2. SEND REAL PACKET (Зовні)
+            // Це критично для покриття рядка await _udpClient.ReceiveAsync(...)
             using (var sender = new UdpClient())
             {
-                var data = Encoding.UTF8.GetBytes("TestUDP");
+                byte[] data = Encoding.UTF8.GetBytes("UdpHello");
                 await sender.SendAsync(data, data.Length, new IPEndPoint(IPAddress.Loopback, port));
             }
 
-            await Task.Delay(2000);
+            // Чекаємо обробки
+            await Task.Delay(1000); 
+
+            // 3. STOP
             wrapper.StopListening();
+            
+            // 4. EXIT (покриває метод Exit)
+            wrapper.Exit();
 
-            Assert.Equal("TestUDP", receivedMsg);
+            Assert.Equal("UdpHello", receivedText);
         }
 
+        // ТЕСТ 2: Перевірка Equals та GetHashCode (були червоні на скріні)
         [Fact]
-        public void Exit_ShouldCloseResources()
+        public void Equals_And_HashCode_Coverage()
         {
-            var wrapper = new UdpClientWrapper(0);
-            wrapper.Exit(); // Covers Exit() method
-            Assert.NotNull(wrapper); 
+            var w1 = new UdpClientWrapper(1000);
+            var w2 = new UdpClientWrapper(1000); // Такий же порт
+            var w3 = new UdpClientWrapper(2000); // Інший порт
+
+            // Покриває Equals(obj) -> true
+            Assert.True(w1.Equals(w2));
+            
+            // Покриває Equals(obj) -> false (різні порти)
+            Assert.False(w1.Equals(w3));
+
+            // Покриває Equals(obj) -> false (null або інший тип) - ЦЕ БУЛО ЧЕРВОНИМ
+            Assert.False(w1.Equals(null));
+            Assert.False(w1.Equals("SomeString"));
+
+            // Покриває GetHashCode
+            Assert.Equal(w1.GetHashCode(), w2.GetHashCode());
         }
 
+        // ТЕСТ 3: Dispose (Явне викликання)
         [Fact]
-        public void Metadata_ShouldBeConsistent()
+        public void Dispose_ShouldRunWithoutError()
         {
-            var wrapper = new UdpClientWrapper(12345);
-            Assert.Equal(wrapper.GetHashCode(), wrapper.GetHashCode());
+            var wrapper = new UdpClientWrapper(3000);
+            
+            // Викликаємо Dispose, щоб покрити _cts?.Cancel() та _udpClient?.Close()
+            wrapper.Dispose(); 
+            
+            Assert.NotNull(wrapper);
         }
     }
 }
