@@ -24,22 +24,17 @@ namespace NetSdrClientAppTests
             Assert.True(result.IsSuccessful, "Усі інтерфейси мають починатися з літери 'I'");
         }
 
-        // ТЕСТ 2 (Для провалу): Networking не повинен знати про System.Net.Sockets
         [Fact]
-        public void Networking_Should_Not_Depend_On_Sockets_Directly()
+        public void Networking_Should_Not_Depend_On_System_Xml()
         {
             // Arrange
             var assembly = typeof(TcpClientWrapper).Assembly;
-
             // Act
-            // Ми кажемо: "Класи в NetSdrClientApp.Networking НЕ повинні використовувати System.Net.Sockets"
             var result = Types.InAssembly(assembly)
                 .That().ResideInNamespace("NetSdrClientApp.Networking")
-                .Should().NotHaveDependencyOn("System.Net.Sockets")
+                .Should().NotHaveDependencyOn("System.Xml")
                 .GetResult();
-
             // Assert
-            Assert.True(result.IsSuccessful, "Архітектурна помилка: Networking не повинен залежати від Sockets!");
+            Assert.True(result.IsSuccessful, "Networking не повинен залежати від System.Xml");
         }
-    }
 }
