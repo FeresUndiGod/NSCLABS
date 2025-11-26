@@ -1,4 +1,7 @@
 using System;
+using System.Linq;
+using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
 using Xunit;
@@ -9,42 +12,79 @@ namespace NetSdrClientAppTests.Networking
     public class TcpClientWrapperTests
     {
         [Fact]
-        public void Constructor_ShouldInitializeWithHostAndPort()
+        public async Task FullLifecycle_ShouldWorkCorrectly()
         {
-            // Arrange
-            string host = "127.0.0.1";
-            int port = 8080;
 
-            // Act
-            var wrapper = new TcpClientWrapper(host, port);
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            
+            var wrapper = new TcpClientWrapper("127.0.0.1", port);
+            bool messageReceived = false;
+            wrapper.MessageReceived += (s, data) => messageReceived = true;
 
-            // Assert
-            Assert.NotNull(wrapper);
+
+            wrapper.Connect();
+            Assert.True(wrapper.Connected);
+
+
+            using var serverClient = await listener.AcceptTcpClientAsync();
+            var serverStream = serverClient.GetStream();
+
+
+            await wrapper.SendMessageAsync("Hello");
+            await wrapper.SendMessageAsync(new byte[] { 0x01, 0x02 });
+
+
+            byte[] buffer = new byte[1024];
+            int bytesRead = await serverStream.ReadAsync(buffer, 0, buffer.Length);
+            Assert.True(bytesRead > 0);
+
+
+            await serverStream.WriteAsync(Encoding.UTF8.GetBytes("Ack"), 0, 3);
+            await Task.Delay(500); // Чекаємо обробки
+            Assert.True(messageReceived, "Client should receive message from server");
+
+
+            wrapper.Disconnect();
+            Assert.False(wrapper.Connected);
+            
+            listener.Stop();
+        }
+
+
+        [Fact]
+        public void Connect_WhenAlreadyConnected_ShouldNotReconnect()
+        {
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+            var wrapper = new TcpClientWrapper("127.0.0.1", port);
+            
+            wrapper.Connect();
+            Assert.True(wrapper.Connected);
+            
+
+            wrapper.Connect(); 
+            Assert.True(wrapper.Connected);
+
+            wrapper.Disconnect();
+            listener.Stop();
         }
 
         [Fact]
-        public void Connected_Initially_ShouldReturnFalse()
+        public async Task Actions_WhenNotConnected_ShouldHandleGracefully()
         {
-            // Arrange
             var wrapper = new TcpClientWrapper("127.0.0.1", 8080);
 
-            // Act
-            bool isConnected = wrapper.Connected;
 
-            // Assert
-            Assert.False(isConnected);
-        }
+            wrapper.Disconnect();
+            Assert.False(wrapper.Connected);
 
-        [Fact]
-        public async Task SendMessageAsync_WhenNotConnected_ShouldThrowException()
-        {
-            // Arrange
-            var wrapper = new TcpClientWrapper("127.0.0.1", 8080);
-            byte[] data = new byte[] { 1, 2, 3 };
 
-            // Act & Assert
             await Assert.ThrowsAsync<InvalidOperationException>(
-                async () => await wrapper.SendMessageAsync(data)
+                async () => await wrapper.SendMessageAsync("Fail")
             );
         }
     }

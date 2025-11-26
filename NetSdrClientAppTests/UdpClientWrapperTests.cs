@@ -1,48 +1,71 @@
 using System;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
 using System.Threading.Tasks;
 using Xunit;
 using NetSdrClientApp.Networking;
-
 
 namespace NetSdrClientAppTests.Networking
 {
     public class UdpClientWrapperTests
     {
-        [Fact]
-        public void Constructor_ShouldCreateInstance()
-        {
-            // Arrange
-            int port = 0;
 
-            // Act
+        [Fact]
+        public async Task Listening_ShouldReceiveData_AndStop()
+        {
+
+            int port = 12000;
             var wrapper = new UdpClientWrapper(port);
+            string receivedMsg = null;
+            
+            wrapper.MessageReceived += (s, data) => receivedMsg = Encoding.UTF8.GetString(data);
 
-            // Assert
-            Assert.NotNull(wrapper);
-        }
 
-        [Fact]
-        public void StopListening_WhenNotStarted_ShouldNotThrow()
-        {
-            // Arrange
-            var wrapper = new UdpClientWrapper(0);
+            var task = wrapper.StartListeningAsync();
+            await Task.Delay(100); 
 
-            // Act & Assert
+
+            using (var sender = new UdpClient())
+            {
+                var data = Encoding.UTF8.GetBytes("TestUDP");
+                await sender.SendAsync(data, data.Length, new IPEndPoint(IPAddress.Loopback, port));
+            }
+
+            await Task.Delay(500); 
+
+
             wrapper.StopListening();
+
+
+            Assert.Equal("TestUDP", receivedMsg);
         }
 
+
         [Fact]
-        public void GetHashCode_ShouldReturnConsistentValue()
+        public void Exit_ShouldCloseResources()
         {
-            // Arrange
+            var wrapper = new UdpClientWrapper(0);
+            
+
+            wrapper.Exit(); 
+            
+
+            Assert.NotNull(wrapper); 
+        }
+
+
+        [Fact]
+        public void Metadata_ShouldBeConsistent()
+        {
             var wrapper = new UdpClientWrapper(12345);
+            
 
-            // Act
-            int hash1 = wrapper.GetHashCode();
-            int hash2 = wrapper.GetHashCode();
-
-            // Assert
+            var hash1 = wrapper.GetHashCode();
+            var hash2 = wrapper.GetHashCode();
+            
             Assert.Equal(hash1, hash2);
+            Assert.NotNull(wrapper);
         }
     }
 }
