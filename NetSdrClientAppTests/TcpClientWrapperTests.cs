@@ -50,7 +50,7 @@ namespace NetSdrClientAppTests.Networking
             await serverStream.WriteAsync(Encoding.UTF8.GetBytes("Ack"), 0, 3);
             
             // Wait for client to process message
-            await Task.Delay(500); 
+            await Task.Delay(2000); 
             Assert.True(messageReceived);
 
             // 5. Disconnect

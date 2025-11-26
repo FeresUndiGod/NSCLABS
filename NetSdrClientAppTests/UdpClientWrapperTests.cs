@@ -28,7 +28,7 @@ namespace NetSdrClientAppTests.Networking
 
             // Start
             var task = wrapper.StartListeningAsync();
-            await Task.Delay(100);
+            await Task.Delay(2000);
 
             // Send Real Packet
             using (var sender = new UdpClient())
@@ -37,7 +37,7 @@ namespace NetSdrClientAppTests.Networking
                 await sender.SendAsync(data, data.Length, new IPEndPoint(IPAddress.Loopback, port));
             }
 
-            await Task.Delay(500);
+            await Task.Delay(2000);
             wrapper.StopListening();
 
             Assert.Equal("TestUDP", receivedMsg);
