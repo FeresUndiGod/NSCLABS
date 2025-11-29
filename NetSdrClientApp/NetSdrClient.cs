@@ -5,6 +5,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
+// ВАЖЛИВО: Цей рядок дозволяє бачити MsgTypes і ControlItemCodes без написання NetSdrMessageHelper.MsgTypes
+using static NetSdrClientApp.Messages.NetSdrMessageHelper;
+
 namespace NetSdrClientApp
 {
     public class NetSdrClient
@@ -38,9 +41,9 @@ namespace NetSdrClientApp
             // Host pre setup
             var msgs = new List<byte[]>
             {
-                NetSdrMessageHelper.GetControlItemMessage(MsgTypes.SetControlItem, ControlItemCodes.IQOutputDataSampleRate, sampleRate),
-                NetSdrMessageHelper.GetControlItemMessage(MsgTypes.SetControlItem, ControlItemCodes.RFFilter, automaticFilterMode),
-                NetSdrMessageHelper.GetControlItemMessage(MsgTypes.SetControlItem, ControlItemCodes.ADModes, adMode),
+                GetControlItemMessage(MsgTypes.SetControlItem, ControlItemCodes.IQOutputDataSampleRate, sampleRate),
+                GetControlItemMessage(MsgTypes.SetControlItem, ControlItemCodes.RFFilter, automaticFilterMode),
+                GetControlItemMessage(MsgTypes.SetControlItem, ControlItemCodes.ADModes, adMode),
             };
 
             foreach (var msg in msgs)
@@ -49,12 +52,10 @@ namespace NetSdrClientApp
             }
         }
 
-        // --- ОСЬ ЦЕЙ МЕТОД, ЯКОГО НЕ ВИСТАЧАЛО ---
         public void Disconnect()
         {
             _tcpClient.Disconnect();
         }
-        // ------------------------------------------
 
         public async Task StartIQAsync()
         {
@@ -70,11 +71,10 @@ namespace NetSdrClientApp
             var n = (byte)1;
 
             var args = new[] { iqDataMode, start, fifo16bitCaptureMode, n };
-            var msg = NetSdrMessageHelper.GetControlItemMessage(MsgTypes.SetControlItem, ControlItemCodes.ReceiverState, args);
+            var msg = GetControlItemMessage(MsgTypes.SetControlItem, ControlItemCodes.ReceiverState, args);
 
             await SendTcpRequest(msg);
             
-            // Запускаємо UDP
             _ = _udpClient.StartListeningAsync();
             
             IQStarted = true;
@@ -90,11 +90,10 @@ namespace NetSdrClientApp
 
             var stop = (byte)0x01;
             var args = new byte[] { 0, stop, 0, 0 };
-            var msg = NetSdrMessageHelper.GetControlItemMessage(MsgTypes.SetControlItem, ControlItemCodes.ReceiverState, args);
+            var msg = GetControlItemMessage(MsgTypes.SetControlItem, ControlItemCodes.ReceiverState, args);
 
             await SendTcpRequest(msg);
             
-            // Зупиняємо UDP
             _udpClient.StopListening();
             
             IQStarted = false;
@@ -106,7 +105,7 @@ namespace NetSdrClientApp
             var frequencyArg = BitConverter.GetBytes(hz).Take(5);
             var args = new[] { channelArg }.Concat(frequencyArg).ToArray();
 
-            var msg = NetSdrMessageHelper.GetControlItemMessage(MsgTypes.SetControlItem, ControlItemCodes.ReceiverFrequency, args);
+            var msg = GetControlItemMessage(MsgTypes.SetControlItem, ControlItemCodes.ReceiverFrequency, args);
 
             await SendTcpRequest(msg);
         }
@@ -119,22 +118,18 @@ namespace NetSdrClientApp
                 return null;
             }
 
-            // У реальному коді тут може бути TaskCompletionSource для очікування відповіді,
-            // але для спрощення ми просто відправляємо.
             await _tcpClient.SendMessageAsync(msg);
             return null; 
         }
 
         private void _tcpClient_MessageReceived(object? sender, byte[] e)
         {
-            // Обробка вхідних повідомлень від TCP
             Console.WriteLine($"TCP Message received: {e.Length} bytes");
         }
 
         private void _udpClient_MessageReceived(object? sender, byte[] e)
         {
-            // Обробка UDP пакетів (IQ даних)
-            // Тут можна викликати NetSdrMessageHelper.GetSamples(...)
+            // Обробка UDP
         }
     }
 }
