@@ -7,7 +7,6 @@ using System.Threading.Tasks;
 
 namespace NetSdrClientApp.Messages
 {
-    //TODO: analyze possible use of [StructLayout] for better performance and readability 
     public static class NetSdrMessageHelper
     {
         private const short _maxMessageLength = 8191;
@@ -70,67 +69,95 @@ namespace NetSdrClientApp.Messages
         {
             itemCode = ControlItemCodes.None;
             sequenceNumber = 0;
-            bool success = true;
             var msgEnumarable = msg as IEnumerable<byte>;
 
             TranslateHeader(msgEnumarable.Take(_msgHeaderLength).ToArray(), out type, out int msgLength);
             msgEnumarable = msgEnumarable.Skip(_msgHeaderLength);
             msgLength -= _msgHeaderLength;
 
-            if (type < MsgTypes.DataItem0) // get item code
-            {
-                var value = BitConverter.ToUInt16(msgEnumarable.Take(_msgControlItemLength).ToArray());
-                msgEnumarable = msgEnumarable.Skip(_msgControlItemLength);
-                msgLength -= _msgControlItemLength;
-
-                if (Enum.IsDefined(typeof(ControlItemCodes), value))
-                {
-                    itemCode = (ControlItemCodes)value;
-                }
-                else
-                {
-                    success = false;
-                }
-            }
-            else // get sequenceNumber
-            {
-                sequenceNumber = BitConverter.ToUInt16(msgEnumarable.Take(_msgSequenceNumberLength).ToArray());
-                msgEnumarable = msgEnumarable.Skip(_msgSequenceNumberLength);
-                msgLength -= _msgSequenceNumberLength;
-            }
+            bool success = type < MsgTypes.DataItem0 
+                ? TryParseControlItem(ref msgEnumarable, ref msgLength, out itemCode)
+                : TryParseSequenceNumber(ref msgEnumarable, ref msgLength, out sequenceNumber);
 
             body = msgEnumarable.ToArray();
-
-            success &= body.Length == msgLength;
-
-            return success;
+            return success && body.Length == msgLength;
         }
 
+        private static bool TryParseControlItem(ref IEnumerable<byte> msgEnumerable, ref int msgLength, out ControlItemCodes itemCode)
+        {
+            itemCode = ControlItemCodes.None;
+            
+            if (msgLength < _msgControlItemLength)
+                return true;
+
+            var itemCodeBytes = msgEnumerable.Take(_msgControlItemLength).ToArray();
+            if (itemCodeBytes.Length != 2)
+                return true;
+
+            var value = BitConverter.ToUInt16(itemCodeBytes);
+            msgEnumerable = msgEnumerable.Skip(_msgControlItemLength);
+            msgLength -= _msgControlItemLength;
+
+            if (!Enum.IsDefined(typeof(ControlItemCodes), (int)value))
+                return false;
+
+            itemCode = (ControlItemCodes)value;
+            return true;
+        }
+
+        private static bool TryParseSequenceNumber(ref IEnumerable<byte> msgEnumerable, ref int msgLength, out ushort sequenceNumber)
+        {
+            sequenceNumber = 0;
+            
+            if (msgLength < _msgSequenceNumberLength)
+                return true;
+
+            var seqBytes = msgEnumerable.Take(_msgSequenceNumberLength).ToArray();
+            if (seqBytes.Length != 2)
+                return true;
+
+            sequenceNumber = BitConverter.ToUInt16(seqBytes);
+            msgEnumerable = msgEnumerable.Skip(_msgSequenceNumberLength);
+            msgLength -= _msgSequenceNumberLength;
+            return true;
+        }
+
+        // FIX S4456: Split validation and iterator into separate methods
         public static IEnumerable<int> GetSamples(ushort sampleSize, byte[] body)
         {
-            sampleSize /= 8; //to bytes
-            if (sampleSize  > 4)
+            ValidateSampleSize(sampleSize);
+            return GetSamplesIterator(sampleSize, body);
+        }
+
+        private static void ValidateSampleSize(ushort sampleSize)
+        {
+            if (sampleSize > 32)
             {
-                throw new ArgumentOutOfRangeException();
+                throw new ArgumentOutOfRangeException(nameof(sampleSize), "Sample size cannot exceed 32 bits");
             }
+        }
+
+        private static IEnumerable<int> GetSamplesIterator(ushort sampleSize, byte[] body)
+        {
+            ushort sampleSizeInBytes = (ushort)(sampleSize / 8);
 
             var bodyEnumerable = body as IEnumerable<byte>;
-            var prefixBytes = Enumerable.Range(0, 4 - sampleSize)
+            var prefixBytes = Enumerable.Range(0, 4 - sampleSizeInBytes)
                                       .Select(b => (byte)0);
 
-            while (bodyEnumerable.Count() >= sampleSize)
+            while (bodyEnumerable.Count() >= sampleSizeInBytes)
             {
                 yield return BitConverter.ToInt32(bodyEnumerable
-                    .Take(sampleSize)
+                    .Take(sampleSizeInBytes)
                     .Concat(prefixBytes)
                     .ToArray());
-                bodyEnumerable = bodyEnumerable.Skip(sampleSize);
+                bodyEnumerable = bodyEnumerable.Skip(sampleSizeInBytes);
             }
         }
 
         private static byte[] GetHeader(MsgTypes type, int msgLength)
         {
-            int lengthWithHeader = msgLength + 2;
+            int lengthWithHeader = msgLength + _msgHeaderLength;
 
             //Data Items edge case
             if (type >= MsgTypes.DataItem0 && lengthWithHeader == _maxDataItemMessageLength)
