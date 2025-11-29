@@ -35,8 +35,30 @@ namespace NetSdrClientAppTests
             byte[] result = NetSdrMessageHelper.GetDataItemMessage(type, data);
 
             Assert.NotNull(result);
-            Assert.Equal(7, result.Length);
-            Assert.Equal(0xAA, result[4]); 
+            Assert.Equal(5, result.Length); // 2 header + 3 data
+            Assert.Equal(0xAA, result[2]); // Data starts at index 2
+        }
+
+        [Fact]
+        public void GetDataItemMessage_DoesNotIncludeSequenceNumber()
+        {
+            // GetDataItemMessage should NOT include sequence number
+            // Sequence number is added at protocol level, not message level
+            var type = MsgTypes.DataItem1;
+            byte[] data = new byte[] { 0x01, 0x02 };
+
+            byte[] result = NetSdrMessageHelper.GetDataItemMessage(type, data);
+
+            // Should be: 2 (header) + 2 (data) = 4 bytes total
+            Assert.Equal(4, result.Length);
+            
+            // Verify header encoding
+            ushort header = BitConverter.ToUInt16(result, 0);
+            MsgTypes parsedType = (MsgTypes)(header >> 13);
+            int length = header & 0x1FFF;
+            
+            Assert.Equal(type, parsedType);
+            Assert.Equal(4, length); // Total message length
         }
 
         [Fact]
@@ -51,7 +73,11 @@ namespace NetSdrClientAppTests
         [Fact]
         public void TranslateMessage_ShouldParseValidMessage()
         {
-            byte[] message = new byte[] { 0x04, 0x00, 0x00, 0x00 };
+            // Create a proper control item message
+            byte[] message = NetSdrMessageHelper.GetControlItemMessage(
+                MsgTypes.Ack, 
+                ControlItemCodes.None, 
+                Array.Empty<byte>());
 
             bool success = NetSdrMessageHelper.TranslateMessage(message, out MsgTypes type, out ControlItemCodes code, out ushort seq, out byte[] body);
 
@@ -145,18 +171,29 @@ namespace NetSdrClientAppTests
         [Fact]
         public void TranslateMessage_ShouldParseDataItemWithSequenceNumber()
         {
+            // Manually create a DataItem message with sequence number
             byte[] data = new byte[] { 0xAA, 0xBB };
-            byte[] message = NetSdrMessageHelper.GetDataItemMessage(MsgTypes.DataItem2, data);
+            ushort sequenceNum = 0x1234;
+            
+            // Header: length=6 (2+2+2), type=DataItem2 (6)
+            // 6 + (6 << 13) = 6 + 49152 = 49158 = 0xC006
+            byte[] header = BitConverter.GetBytes((ushort)0xC006);
+            byte[] seqBytes = BitConverter.GetBytes(sequenceNum);
+            byte[] message = header.Concat(seqBytes).Concat(data).ToArray();
             
             bool success = NetSdrMessageHelper.TranslateMessage(message, out MsgTypes type, out ControlItemCodes code, out ushort seq, out byte[] body);
             
             Assert.True(success);
             Assert.Equal(MsgTypes.DataItem2, type);
             Assert.Equal(ControlItemCodes.None, code);
+            Assert.Equal(sequenceNum, seq);
+            Assert.Equal(2, body.Length);
+            Assert.Equal(0xAA, body[0]);
+            Assert.Equal(0xBB, body[1]);
         }
 
         [Fact]
-        public void GetSamples_Should Handle8BitSamples()
+        public void GetSamples_ShouldHandle8BitSamples()
         {
             ushort sampleSize = 8;
             byte[] body = new byte[] { 0x01, 0x02, 0x03, 0x04 };
@@ -238,22 +275,28 @@ namespace NetSdrClientAppTests
         [Fact]
         public void GetDataItemMessage_ShouldHandleMaxDataItemLength()
         {
-            // Test edge case for max data item length (8194 - 4 bytes header/seq)
-            byte[] maxData = new byte[8190];
+            // Max data for DataItem: 8191 (max message) - 2 (header) = 8189 bytes
+            byte[] maxData = new byte[8189];
             
             byte[] result = NetSdrMessageHelper.GetDataItemMessage(MsgTypes.DataItem0, maxData);
             
             Assert.NotNull(result);
+            Assert.Equal(8191, result.Length); // 2 header + 8189 data
         }
 
         [Fact]
         public void TranslateMessage_ShouldHandleMinimumValidMessage()
         {
-            byte[] message = new byte[] { 0x02, 0x00 }; // Minimum: just header, length=2
+            // Create proper minimum message using helper
+            byte[] message = NetSdrMessageHelper.GetControlItemMessage(
+                MsgTypes.Ack, 
+                ControlItemCodes.None, 
+                Array.Empty<byte>());
             
             bool success = NetSdrMessageHelper.TranslateMessage(message, out MsgTypes type, out ControlItemCodes code, out ushort seq, out byte[] body);
             
             Assert.True(success);
+            Assert.Equal(MsgTypes.Ack, type);
             Assert.Empty(body);
         }
     }

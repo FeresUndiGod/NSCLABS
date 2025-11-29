@@ -7,7 +7,6 @@ using System.Threading.Tasks;
 
 namespace NetSdrClientApp.Messages
 {
-    //TODO: analyze possible use of [StructLayout] for better performance and readability 
     public static class NetSdrMessageHelper
     {
         private const short _maxMessageLength = 8191;
@@ -79,25 +78,41 @@ namespace NetSdrClientApp.Messages
 
             if (type < MsgTypes.DataItem0) // get item code
             {
-                var value = BitConverter.ToUInt16(msgEnumarable.Take(_msgControlItemLength).ToArray());
-                msgEnumarable = msgEnumarable.Skip(_msgControlItemLength);
-                msgLength -= _msgControlItemLength;
+                // Check if there are enough bytes for item code
+                if (msgLength >= _msgControlItemLength)
+                {
+                    var itemCodeBytes = msgEnumarable.Take(_msgControlItemLength).ToArray();
+                    if (itemCodeBytes.Length == 2)
+                    {
+                        var value = BitConverter.ToUInt16(itemCodeBytes);
+                        msgEnumarable = msgEnumarable.Skip(_msgControlItemLength);
+                        msgLength -= _msgControlItemLength;
 
-                // FIX #1: Convert UInt16 to Int32 for Enum.IsDefined
-                if (Enum.IsDefined(typeof(ControlItemCodes), (int)value))
-                {
-                    itemCode = (ControlItemCodes)value;
+                        // FIX #1: Convert UInt16 to Int32 for Enum.IsDefined
+                        if (Enum.IsDefined(typeof(ControlItemCodes), (int)value))
+                        {
+                            itemCode = (ControlItemCodes)value;
+                        }
+                        else
+                        {
+                            success = false;
+                        }
+                    }
                 }
-                else
-                {
-                    success = false;
-                }
+                // If no item code bytes, itemCode stays None
             }
             else // get sequenceNumber
             {
-                sequenceNumber = BitConverter.ToUInt16(msgEnumarable.Take(_msgSequenceNumberLength).ToArray());
-                msgEnumarable = msgEnumarable.Skip(_msgSequenceNumberLength);
-                msgLength -= _msgSequenceNumberLength;
+                if (msgLength >= _msgSequenceNumberLength)
+                {
+                    var seqBytes = msgEnumarable.Take(_msgSequenceNumberLength).ToArray();
+                    if (seqBytes.Length == 2)
+                    {
+                        sequenceNumber = BitConverter.ToUInt16(seqBytes);
+                        msgEnumarable = msgEnumarable.Skip(_msgSequenceNumberLength);
+                        msgLength -= _msgSequenceNumberLength;
+                    }
+                }
             }
 
             body = msgEnumarable.ToArray();
@@ -107,44 +122,48 @@ namespace NetSdrClientApp.Messages
             return success;
         }
 
+        // FIX S4456: Split validation and iterator into separate methods
         public static IEnumerable<int> GetSamples(ushort sampleSize, byte[] body)
         {
-            // FIX #2: Add validation BEFORE dividing
+            ValidateSampleSize(sampleSize);
+            return GetSamplesIterator(sampleSize, body);
+        }
+
+        private static void ValidateSampleSize(ushort sampleSize)
+        {
             if (sampleSize > 32)
             {
                 throw new ArgumentOutOfRangeException(nameof(sampleSize), "Sample size cannot exceed 32 bits");
             }
 
-            sampleSize /= 8; //to bytes
-            if (sampleSize > 4)
+            ushort sampleSizeInBytes = (ushort)(sampleSize / 8);
+            if (sampleSizeInBytes > 4)
             {
                 throw new ArgumentOutOfRangeException(nameof(sampleSize), "Sample size in bytes cannot exceed 4");
             }
+        }
+
+        private static IEnumerable<int> GetSamplesIterator(ushort sampleSize, byte[] body)
+        {
+            ushort sampleSizeInBytes = (ushort)(sampleSize / 8);
 
             var bodyEnumerable = body as IEnumerable<byte>;
-            var prefixBytes = Enumerable.Range(0, 4 - sampleSize)
+            var prefixBytes = Enumerable.Range(0, 4 - sampleSizeInBytes)
                                       .Select(b => (byte)0);
 
-            while (bodyEnumerable.Count() >= sampleSize)
+            while (bodyEnumerable.Count() >= sampleSizeInBytes)
             {
                 yield return BitConverter.ToInt32(bodyEnumerable
-                    .Take(sampleSize)
+                    .Take(sampleSizeInBytes)
                     .Concat(prefixBytes)
                     .ToArray());
-                bodyEnumerable = bodyEnumerable.Skip(sampleSize);
+                bodyEnumerable = bodyEnumerable.Skip(sampleSizeInBytes);
             }
         }
 
         private static byte[] GetHeader(MsgTypes type, int msgLength)
         {
-            // FIX #3: Include control item code in length calculation for DataItems
             int lengthWithHeader = msgLength + _msgHeaderLength;
-            
-            // For DataItem messages, add sequence number length
-            if (type >= MsgTypes.DataItem0)
-            {
-                lengthWithHeader += _msgSequenceNumberLength;
-            }
 
             //Data Items edge case
             if (type >= MsgTypes.DataItem0 && lengthWithHeader == _maxDataItemMessageLength)
