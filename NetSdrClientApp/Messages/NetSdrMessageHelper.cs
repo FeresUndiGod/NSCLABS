@@ -69,57 +69,57 @@ namespace NetSdrClientApp.Messages
         {
             itemCode = ControlItemCodes.None;
             sequenceNumber = 0;
-            bool success = true;
             var msgEnumarable = msg as IEnumerable<byte>;
 
             TranslateHeader(msgEnumarable.Take(_msgHeaderLength).ToArray(), out type, out int msgLength);
             msgEnumarable = msgEnumarable.Skip(_msgHeaderLength);
             msgLength -= _msgHeaderLength;
 
-            if (type < MsgTypes.DataItem0) // get item code
-            {
-                // Check if there are enough bytes for item code
-                if (msgLength >= _msgControlItemLength)
-                {
-                    var itemCodeBytes = msgEnumarable.Take(_msgControlItemLength).ToArray();
-                    if (itemCodeBytes.Length == 2)
-                    {
-                        var value = BitConverter.ToUInt16(itemCodeBytes);
-                        msgEnumarable = msgEnumarable.Skip(_msgControlItemLength);
-                        msgLength -= _msgControlItemLength;
-
-                        // FIX #1: Convert UInt16 to Int32 for Enum.IsDefined
-                        if (Enum.IsDefined(typeof(ControlItemCodes), (int)value))
-                        {
-                            itemCode = (ControlItemCodes)value;
-                        }
-                        else
-                        {
-                            success = false;
-                        }
-                    }
-                }
-                // If no item code bytes, itemCode stays None
-            }
-            else // get sequenceNumber
-            {
-                if (msgLength >= _msgSequenceNumberLength)
-                {
-                    var seqBytes = msgEnumarable.Take(_msgSequenceNumberLength).ToArray();
-                    if (seqBytes.Length == 2)
-                    {
-                        sequenceNumber = BitConverter.ToUInt16(seqBytes);
-                        msgEnumarable = msgEnumarable.Skip(_msgSequenceNumberLength);
-                        msgLength -= _msgSequenceNumberLength;
-                    }
-                }
-            }
+            bool success = type < MsgTypes.DataItem0 
+                ? TryParseControlItem(ref msgEnumarable, ref msgLength, out itemCode)
+                : TryParseSequenceNumber(ref msgEnumarable, ref msgLength, out sequenceNumber);
 
             body = msgEnumarable.ToArray();
+            return success && body.Length == msgLength;
+        }
 
-            success &= body.Length == msgLength;
+        private static bool TryParseControlItem(ref IEnumerable<byte> msgEnumerable, ref int msgLength, out ControlItemCodes itemCode)
+        {
+            itemCode = ControlItemCodes.None;
+            
+            if (msgLength < _msgControlItemLength)
+                return true;
 
-            return success;
+            var itemCodeBytes = msgEnumerable.Take(_msgControlItemLength).ToArray();
+            if (itemCodeBytes.Length != 2)
+                return true;
+
+            var value = BitConverter.ToUInt16(itemCodeBytes);
+            msgEnumerable = msgEnumerable.Skip(_msgControlItemLength);
+            msgLength -= _msgControlItemLength;
+
+            if (!Enum.IsDefined(typeof(ControlItemCodes), (int)value))
+                return false;
+
+            itemCode = (ControlItemCodes)value;
+            return true;
+        }
+
+        private static bool TryParseSequenceNumber(ref IEnumerable<byte> msgEnumerable, ref int msgLength, out ushort sequenceNumber)
+        {
+            sequenceNumber = 0;
+            
+            if (msgLength < _msgSequenceNumberLength)
+                return true;
+
+            var seqBytes = msgEnumerable.Take(_msgSequenceNumberLength).ToArray();
+            if (seqBytes.Length != 2)
+                return true;
+
+            sequenceNumber = BitConverter.ToUInt16(seqBytes);
+            msgEnumerable = msgEnumerable.Skip(_msgSequenceNumberLength);
+            msgLength -= _msgSequenceNumberLength;
+            return true;
         }
 
         // FIX S4456: Split validation and iterator into separate methods
@@ -134,12 +134,6 @@ namespace NetSdrClientApp.Messages
             if (sampleSize > 32)
             {
                 throw new ArgumentOutOfRangeException(nameof(sampleSize), "Sample size cannot exceed 32 bits");
-            }
-
-            ushort sampleSizeInBytes = (ushort)(sampleSize / 8);
-            if (sampleSizeInBytes > 4)
-            {
-                throw new ArgumentOutOfRangeException(nameof(sampleSize), "Sample size in bytes cannot exceed 4");
             }
         }
 
