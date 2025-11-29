@@ -31,10 +31,17 @@ namespace NetSdrClientAppTests
         public async Task ConnectAsync_ShouldCallConnect_WhenNotConnected()
         {
             // Arrange
-            // ВАЖЛИВО: Кажемо, що клієнт НЕ підключений, щоб спрацював if (!_tcpClient.Connected)
-            _mockTcp.Setup(t => t.Connected).Returns(false);
+            // === ВИПРАВЛЕННЯ ТУТ ===
+            // Ми використовуємо змінну, щоб імітувати зміну стану підключення
+            bool isConnected = false;
+            
+            // Коли питають Connected, повертаємо значення змінної
+            _mockTcp.Setup(t => t.Connected).Returns(() => isConnected);
+            
+            // Коли викликають Connect(), змінюємо змінну на true
+            _mockTcp.Setup(t => t.Connect()).Callback(() => isConnected = true);
 
-            // Налаштування для SendMessageAsync (імітація відповіді сервера)
+            // Налаштування для SendMessageAsync
             _mockTcp.Setup(t => t.SendMessageAsync(It.IsAny<byte[]>()))
                 .Returns(Task.CompletedTask);
 
@@ -42,7 +49,8 @@ namespace NetSdrClientAppTests
             await _client.ConnectAsync();
 
             // Assert
-            _mockTcp.Verify(t => t.Connect(), Times.Once); // Перевіряємо, що Connect викликався
+            _mockTcp.Verify(t => t.Connect(), Times.Once);
+            // Тепер це пройде, бо Connected стало true і код дійшов до відправки
             _mockTcp.Verify(t => t.SendMessageAsync(It.IsAny<byte[]>()), Times.AtLeastOnce);
         }
 
@@ -50,7 +58,6 @@ namespace NetSdrClientAppTests
         public async Task StartIQAsync_ShouldStartUdp_WhenConnected()
         {
             // Arrange
-            // ВАЖЛИВО: Тут кажемо, що клієнт ПІДКЛЮЧЕНИЙ, інакше метод вийде на early return
             _mockTcp.Setup(t => t.Connected).Returns(true);
             
             _mockTcp.Setup(t => t.SendMessageAsync(It.IsAny<byte[]>()))
@@ -75,7 +82,6 @@ namespace NetSdrClientAppTests
             await _client.StartIQAsync();
 
             // Assert
-            // Нічого не мало відбутися
             _mockUdp.Verify(u => u.StartListeningAsync(), Times.Never);
         }
 
