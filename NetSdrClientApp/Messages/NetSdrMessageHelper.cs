@@ -83,7 +83,8 @@ namespace NetSdrClientApp.Messages
                 msgEnumarable = msgEnumarable.Skip(_msgControlItemLength);
                 msgLength -= _msgControlItemLength;
 
-                if (Enum.IsDefined(typeof(ControlItemCodes), value))
+                // FIX #1: Convert UInt16 to Int32 for Enum.IsDefined
+                if (Enum.IsDefined(typeof(ControlItemCodes), (int)value))
                 {
                     itemCode = (ControlItemCodes)value;
                 }
@@ -108,10 +109,16 @@ namespace NetSdrClientApp.Messages
 
         public static IEnumerable<int> GetSamples(ushort sampleSize, byte[] body)
         {
-            sampleSize /= 8; //to bytes
-            if (sampleSize  > 4)
+            // FIX #2: Add validation BEFORE dividing
+            if (sampleSize > 32)
             {
-                throw new ArgumentOutOfRangeException();
+                throw new ArgumentOutOfRangeException(nameof(sampleSize), "Sample size cannot exceed 32 bits");
+            }
+
+            sampleSize /= 8; //to bytes
+            if (sampleSize > 4)
+            {
+                throw new ArgumentOutOfRangeException(nameof(sampleSize), "Sample size in bytes cannot exceed 4");
             }
 
             var bodyEnumerable = body as IEnumerable<byte>;
@@ -130,7 +137,14 @@ namespace NetSdrClientApp.Messages
 
         private static byte[] GetHeader(MsgTypes type, int msgLength)
         {
-            int lengthWithHeader = msgLength + 2;
+            // FIX #3: Include control item code in length calculation for DataItems
+            int lengthWithHeader = msgLength + _msgHeaderLength;
+            
+            // For DataItem messages, add sequence number length
+            if (type >= MsgTypes.DataItem0)
+            {
+                lengthWithHeader += _msgSequenceNumberLength;
+            }
 
             //Data Items edge case
             if (type >= MsgTypes.DataItem0 && lengthWithHeader == _maxDataItemMessageLength)
